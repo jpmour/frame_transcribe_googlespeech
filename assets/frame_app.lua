@@ -5,11 +5,44 @@ local plain_text = require('plain_text.min')
 
 -- Phone to Frame flags
 TEXT_MSG = 0x0b
+STYLED_TEXT_MSG = 0x0c
 AUDIO_SUBS_MSG = 0x30
 TAP_SUBS_MSG = 0x10
 
+-- Speaker colours. The Frame only has 16 fixed palette names, so we reassign the RGB value
+-- of some of them. Speaker 0 (white) means "no speaker information".
+-- 0 WHITE, 1 SKYBLUE (cyan), 2 YELLOW, 3 GREEN, 4 PINK, 5 CLOUDBLUE (lavender)
+local speaker_colors = {[0]='WHITE', 'SKYBLUE', 'YELLOW', 'GREEN', 'PINK', 'CLOUDBLUE'}
+
+function setup_palette()
+    pcall(frame.display.assign_color, 'WHITE', 255, 255, 255)
+    pcall(frame.display.assign_color, 'SKYBLUE', 100, 200, 255)
+    pcall(frame.display.assign_color, 'YELLOW', 255, 220, 100)
+    pcall(frame.display.assign_color, 'GREEN', 150, 255, 150)
+    pcall(frame.display.assign_color, 'PINK', 255, 150, 200)
+    pcall(frame.display.assign_color, 'CLOUDBLUE', 200, 180, 255)
+end
+
+-- Parse a styled text message: [line count] then per line [speaker byte][length byte][text].
+-- The whole display arrives as one message, so text and colours always update together.
+-- A damaged message gives fewer lines instead of an error (an error would stop the app).
+function parse_styled_text(block)
+    local lines = {}
+    local count = string.byte(block, 1) or 0
+    local pos = 2
+    for i = 1, count do
+        local speaker = string.byte(block, pos)
+        local len = string.byte(block, pos + 1)
+        if speaker == nil or len == nil then break end
+        lines[i] = { speaker = speaker, text = string.sub(block, pos + 2, pos + 1 + len) }
+        pos = pos + 2 + len
+    end
+    return lines
+end
+
 -- register the message parser so it's automatically called when matching data comes in
 data.parsers[TEXT_MSG] = plain_text.parse_plain_text
+data.parsers[STYLED_TEXT_MSG] = parse_styled_text
 data.parsers[AUDIO_SUBS_MSG] = code.parse_code
 data.parsers[TAP_SUBS_MSG] = code.parse_code
 
@@ -33,8 +66,19 @@ function print_text()
     end
 end
 
+-- draw lines that each carry a speaker colour
+function print_styled_text(lines)
+    for i, line in ipairs(lines) do
+        if line.text ~= "" then
+            local color = speaker_colors[line.speaker] or 'WHITE'
+            frame.display.text(line.text, 1, (i - 1) * 60 + 1, {color=color})
+        end
+    end
+end
+
 -- Main app loop
 function app_loop()
+	setup_palette()
 	-- clear the display
 	frame.display.text(" ", 1, 1)
 	frame.display.show()
@@ -53,7 +97,13 @@ function app_loop()
 
                 if items_ready > 0 then
 
-                    if (data.app_data[TEXT_MSG] ~= nil and data.app_data[TEXT_MSG].string ~= nil) then
+                    if (data.app_data[STYLED_TEXT_MSG] ~= nil) then
+                        -- a styled message replaces the whole display, and any older plain text
+                        print_styled_text(data.app_data[STYLED_TEXT_MSG])
+                        frame.display.show()
+                        data.app_data[STYLED_TEXT_MSG] = nil
+                        data.app_data[TEXT_MSG] = nil
+                    elseif (data.app_data[TEXT_MSG] ~= nil and data.app_data[TEXT_MSG].string ~= nil) then
                         print_text()
                         frame.display.show()
                     end

@@ -12,6 +12,7 @@ class SettingsPanel extends StatelessWidget {
     required this.model,
     required this.onModelChanged,
     required this.onSave,
+    required this.onTestColours,
     this.errorMsg,
   });
 
@@ -21,6 +22,7 @@ class SettingsPanel extends StatelessWidget {
   final SttModel model;
   final ValueChanged<SttModel> onModelChanged;
   final VoidCallback onSave;
+  final VoidCallback onTestColours;
   final String? errorMsg;
 
   @override
@@ -53,7 +55,15 @@ class SettingsPanel extends StatelessWidget {
           ],
         ),
         if (errorMsg != null) Text(errorMsg!, style: const TextStyle(backgroundColor: Colors.red)),
-        ElevatedButton(onPressed: onSave, child: const Text('Save')),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ElevatedButton(onPressed: onSave, child: const Text('Save')),
+            const SizedBox(width: 12),
+            // shows the speaker colour palette (and æøå) on the Frame, using fake speaker data
+            TextButton(onPressed: onTestColours, child: const Text('Test Frame colours')),
+          ],
+        ),
       ],
     );
   }

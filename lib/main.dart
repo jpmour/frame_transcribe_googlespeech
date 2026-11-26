@@ -19,6 +19,7 @@ import 'foreground_service.dart';
 import 'settings_panel.dart';
 import 'stt_models.dart';
 import 'transcript_view.dart';
+import 'tx_styled_text.dart';
 import 'utterance.dart';
 
 void main() {
@@ -111,6 +112,23 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     // saved right away, used the next time recognition starts
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('stt_model', model.id);
+  }
+
+  /// Shows every speaker colour on the Frame with fake data, to tune the palette on the real display.
+  /// The last line also checks that Norwegian letters render.
+  Future<void> _testColours() async {
+    if (frame == null || currentState != ApplicationState.running) {
+      setState(() => _errorMsg = 'Connect the Frame and start the app first, then test colours');
+      return;
+    }
+    await frame!.sendMessage(TxStyledText(lines: const [
+      StyledLine('White: no speaker info'),
+      StyledLine('Speaker 1 (cyan)', speaker: 1),
+      StyledLine('Speaker 2 (yellow)', speaker: 2),
+      StyledLine('Speaker 3 (green)', speaker: 3),
+      StyledLine('Speaker 4 (pink)', speaker: 4),
+      StyledLine('Speaker 5: æøå ÆØÅ', speaker: 5),
+    ]));
   }
 
   /// "no-NO, en-US" -> ['no-NO', 'en-US']
@@ -393,6 +411,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                     model: _model,
                     onModelChanged: _onModelChanged,
                     onSave: _savePrefs,
+                    onTestColours: _testColours,
                     errorMsg: _errorMsg,
                   ),
                   Expanded(
