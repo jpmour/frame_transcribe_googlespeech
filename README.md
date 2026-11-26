@@ -1,5 +1,9 @@
 # Frame Transcribe - Google Cloud Speech API (online speech-to-text, live captioning, Frame microphone)
 
+[![Build APK](https://github.com/jpmour/frame_transcribe_googlespeech/actions/workflows/build.yml/badge.svg)](https://github.com/jpmour/frame_transcribe_googlespeech/actions/workflows/build.yml)
+
+**Getting an APK:** every push to `main` builds a release APK. Open the Actions tab, pick the latest run and download the `frame-transcribe-apk` artifact. For updates to install over the previous build (keeping your settings), do the one-time [signing setup](docs/SIGNING.md).
+
 Connects to Brilliant Labs Frame, streams audio from the Frame microphone, which is sent through a [Google's cloud-based streaming transcription service](https://cloud.google.com/speech-to-text), and displays the streaming text on the Frame display in real-time.
 
 Google's cloud-based speech-to-text streaming API [supports many languages](https://cloud.google.com/speech-to-text/v2/docs/speech-to-text-supported-languages), and this app presently uses the `telephony` model type.
