@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # needed to publish the APK as a GitHub Release (main branch only)
 
 jobs:
   build:
@@ -106,3 +106,19 @@ jobs:
           name: frame-transcribe-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+
+      # On main only: publish the APK as the "latest" release, so there is one fixed download link
+      # that works on a phone without a GitHub login (the repo is public; the APK holds no secrets,
+      # your Google credentials are only typed into the app and stay on the phone).
+      - name: Publish latest APK as a release
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk frame-transcribe.apk
+          gh release delete latest-build --yes --cleanup-tag || true
+          gh release create latest-build frame-transcribe.apk \
+            --target "$GITHUB_SHA" \
+            --title "Latest build #${{ github.run_number }}" \
+            --notes "Built from commit ${GITHUB_SHA::7} (run #${{ github.run_number }}). Install over the previous version to keep your settings."

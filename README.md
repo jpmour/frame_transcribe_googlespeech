@@ -2,7 +2,7 @@
 
 [![Build APK](https://github.com/jpmour/frame_transcribe_googlespeech/actions/workflows/build.yml/badge.svg)](https://github.com/jpmour/frame_transcribe_googlespeech/actions/workflows/build.yml)
 
-**Getting an APK:** every push to `main` builds a release APK. Open the Actions tab, pick the latest run and download the `frame-transcribe-apk` artifact. For updates to install over the previous build (keeping your settings), do the one-time [signing setup](docs/SIGNING.md).
+**Getting an APK:** every push to `main` builds a release APK. The newest one is always at [releases/latest/download/frame-transcribe.apk](https://github.com/jpmour/frame_transcribe_googlespeech/releases/latest/download/frame-transcribe.apk) (open it on the phone to download and install). Other branches build too: open the Actions tab, pick the run and download the `frame-transcribe-apk` artifact at the bottom of the page. For updates to install over the previous build (keeping your settings), do the one-time [signing setup](docs/SIGNING.md).
 
 Connects to Brilliant Labs Frame, streams audio from the Frame microphone, which is sent through a [Google's cloud-based streaming transcription service](https://cloud.google.com/speech-to-text), and displays the streaming text on the Frame display in real-time.
 
