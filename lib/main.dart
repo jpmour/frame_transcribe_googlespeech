@@ -16,6 +16,10 @@ import 'package:simple_frame_app/tx/plain_text.dart';
 import 'package:simple_frame_app/text_utils.dart';
 import 'package:simple_frame_app/simple_frame_app.dart';
 import 'foreground_service.dart';
+import 'settings_panel.dart';
+import 'stt_models.dart';
+import 'transcript_view.dart';
+import 'utterance.dart';
 
 void main() {
   // Set up Android foreground service
@@ -53,6 +57,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   final TextEditingController _serviceAccountJsonController = TextEditingController();
   final TextEditingController _projectIdController = TextEditingController();
   final TextEditingController _languageCodeController = TextEditingController();
+  SttModel _model = SttModel.chirp3;
   StreamSubscription<StreamingRecognizeResponse>? _recognitionSubs;
   // 16-bit linear PCM from Frame mic
   Stream<Uint8List>? _audioSampleStream;
@@ -64,10 +69,11 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
   // transcription UI display
   String _partialResult = '';
-  final List<String> _transcript = List.empty(growable: true);
+  // TODO (parking lot P1): save the transcript to a timestamped file with path_provider
+  // TODO (parking lot P4): session list screen to resume/delete past sessions (needs P1)
+  final List<Utterance> _transcript = List.empty(growable: true);
   final ScrollController _transcriptController = ScrollController();
   final ScrollController _partialResultController = ScrollController();
-  static const _textStyle = TextStyle(fontSize: 24);
   String? _errorMsg;
 
   @override
@@ -85,7 +91,9 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     setState(() {
       _serviceAccountJsonController.text = prefs.getString('service_account_json') ?? '';
       _projectIdController.text = prefs.getString('project_id') ?? '';
-      _languageCodeController.text = prefs.getString('language_code') ?? '';
+      // mixed Norwegian/English by default (Google's code for Norwegian is no-NO)
+      _languageCodeController.text = prefs.getString('language_code') ?? 'no-NO,en-US';
+      _model = SttModel.byId(prefs.getString('stt_model'));
     });
   }
 
@@ -95,18 +103,22 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     await prefs.setString('service_account_json', _serviceAccountJsonController.text);
     await prefs.setString('project_id', _projectIdController.text);
     await prefs.setString('language_code', _languageCodeController.text);
+    await prefs.setString('stt_model', _model.id);
   }
 
-  RecognitionConfigV2 _getRecognitionConfig() => RecognitionConfigV2(
-    model: RecognitionModelV2.telephony, // TODO try .long, .telephony (for self vs others' speech)
-    languageCodes: [_languageCodeController.text], // TODO try multi-codes e.g. ['de-DE', 'en-US'], how does it choose the transcription language, or do I get transcriptions in both as alternatives?
-    features: RecognitionFeatures(),
-    explicitDecodingConfig: ExplicitDecodingConfig(
-      encoding: ExplicitDecodingConfig_AudioEncoding.LINEAR16,
-      sampleRateHertz: _sampleRate,
-      audioChannelCount: 1,
-    )
-  );
+  Future<void> _onModelChanged(SttModel model) async {
+    setState(() => _model = model);
+    // saved right away, used the next time recognition starts
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('stt_model', model.id);
+  }
+
+  /// "no-NO, en-US" -> ['no-NO', 'en-US']
+  List<String> get _languageCodes => _languageCodeController.text
+      .split(',')
+      .map((c) => c.trim())
+      .where((c) => c.isNotEmpty)
+      .toList();
 
   /// This application uses google cloud speech-to-text to listen to audio from the Frame mic, convert to text,
   /// and send the text to the Frame in real-time. It has a running main loop in this function
@@ -115,7 +127,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   Future<void> run() async {
     // validate Google Cloud Speech-to-Text API parameters exist at least
     _errorMsg = null;
-    if (_serviceAccountJsonController.text.isEmpty || _projectIdController.text.isEmpty || _languageCodeController.text.isEmpty) {
+    if (_serviceAccountJsonController.text.isEmpty || _projectIdController.text.isEmpty || _languageCodes.isEmpty) {
       setState(() {
         _errorMsg = 'Error: Set values for service account, project id and language code';
       });
@@ -196,21 +208,34 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     });
   }
 
+  /// Turn an API error into one readable line for the screen.
+  String _describeError(Object error) {
+    final text = error.toString().replaceAll(RegExp(r'\s+'), ' ');
+    final shortText = text.length > 200 ? '${text.substring(0, 200)}...' : text;
+    return 'Speech API error (model ${_model.id}, ${_languageCodes.join(',')}): $shortText';
+  }
+
   /// When we receive a tap to start the transcribing, we need to start
   /// audio streaming on Frame and start streaming recognition on the google speech API end
   Future<void> _startRecognition() async {
-    final speechToText = EndlessStreamingServiceV2.viaServiceAccount(
-      ServiceAccount.fromString(_serviceAccountJsonController.text),
-      projectId: _projectIdController.text,
-    );
-
-    final recognitionConfig = _getRecognitionConfig();
+    final model = _model;
+    final recognitionConfig = model.buildConfig(languageCodes: _languageCodes, sampleRate: _sampleRate);
 
     // tell Frame to start streaming audio
     await frame!.sendMessage(TxCode(msgCode: 0x30, value: 1));
 
     try {
+      // TODO (parking lot P6): fall back to an on-device recogniser when there is no network
+      // The model decides the regional endpoint (Chirp 3 does not work on the global one)
+      final speechToText = EndlessStreamingServiceV2.viaServiceAccount(
+        ServiceAccount.fromString(_serviceAccountJsonController.text),
+        projectId: _projectIdController.text,
+        cloudSpeechEndpoint: model.endpoint,
+        location: model.location,
+      );
+
       // TODO put this object where I can call on it later to detach()
+      // TODO (parking lot P5): count dropped BLE audio packets and show them in the UI
       var rxAudio = RxAudio(streaming: true);
       // the audio stream from Frame, which needs to be closed() to stop the streaming recognition
       _audioSampleStream = rxAudio.attach(frame!.dataResponse);
@@ -234,12 +259,21 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
         // log the streamed results
         _log.fine(() => 'Result: $data');
 
-        // just use the first alternative for now (consider other language alternatives if provided?)
-        // and concatenate all the pieces (regardless of stability or whether this result(s) is final or not)
-        final currentText =
-            data.results.where((e) => e.alternatives.isNotEmpty)
+        // responses can arrive without any results (e.g. speech activity events)
+        final results = data.results.where((e) => e.alternatives.isNotEmpty).toList();
+        if (results.isEmpty) return;
+
+        // use the first alternative of each result. Finished parts are separated from
+        // the interim part that is still changing.
+        String join(Iterable<StreamingRecognitionResult> parts) => parts
             .map((e) => e.alternatives.first.transcript)
-            .join();
+            .join(' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+        final finalResults = results.where((e) => e.isFinal).toList();
+        final finalText = join(finalResults);
+        final interimText = join(results.where((e) => !e.isFinal));
+        final currentText = join(results);
 
         if (_log.isLoggable(Level.FINE)) {
           _log.fine(() => 'Recognized text: $currentText');
@@ -249,6 +283,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
         // (there are many responses that split in different places, have different stability values,
         // but concatenate to the same string in our case, so don't update Frame display)
         if (currentText != prevText) { // TODO (&& Latin-only script?)
+          prevText = currentText;
           // Frame can display 6 lines of plain text, so work out the text wrapping
           List<String> wrappedText = TextUtils.wrapText(currentText, 640, 4);
 
@@ -264,29 +299,23 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
         // the utterance to the final transcript.
         // In between, there are non-final fragments, and they can be shown as previews but not appended
         // to the final transcript. A newline doesn't need to be added either.
-        if (data.results.first.isFinal) {
-          // data.results.first.alternatives.first.transcript should match currentText
-          // (the complete utterance) when isFinal is true
-          assert(currentText == data.results.first.alternatives.first.transcript);
-
-          // add currentText to the official transcript and clear out the interim
-          setState(() {
-            _transcript.add(currentText);
-            _partialResult = '';
-          });
-          _scrollToBottom();
-
-        } else {
-          // interim results, show the interim result but don't add to the official transcript yet
-          setState(() {
-            _partialResult = currentText;
-          });
-          _scrollToBottom();
-        }
-
-      }, onError: (error) {
-        _log.warning('Error occurred in endless stream: $error');
         setState(() {
+          if (finalText.isNotEmpty) {
+            // keep the language the API detected for this utterance
+            _transcript.add(Utterance(finalText, languageCode: finalResults.first.languageCode));
+          }
+          _partialResult = interimText;
+        });
+        _scrollToBottom();
+
+      }, onError: (error) async {
+        _log.warning('Error occurred in endless stream: $error');
+        // show the problem, and stop streaming audio so the user can fix it and double-tap again
+        await _stopRecognition();
+        _streaming = false;
+        await frame!.sendMessage(TxPlainText(msgCode: 0x0b, text: 'Speech error. Double-Tap to retry'));
+        setState(() {
+          _errorMsg = _describeError(error);
           currentState = ApplicationState.ready;
         });
       }, onDone: () {
@@ -301,6 +330,11 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
     } catch (e) {
       _log.warning(() => 'Error executing application logic: $e');
+      await _stopRecognition();
+      _streaming = false;
+      setState(() {
+        _errorMsg = _describeError(e);
+      });
     }
   }
 
@@ -352,41 +386,23 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  TextField(controller: _serviceAccountJsonController, obscureText: false, decoration: const InputDecoration(hintText: 'Enter Service Account JSON'),),
-                  TextField(controller: _projectIdController, obscureText: false, decoration: const InputDecoration(hintText: 'Enter Project Id'),),
-                  TextField(controller: _languageCodeController, obscureText: false, decoration: const InputDecoration(hintText: 'Enter Language Code e.g. en-US'),),
-                  if (_errorMsg != null) Text(_errorMsg!, style: const TextStyle(backgroundColor: Colors.red)),
-                  ElevatedButton(onPressed: _savePrefs, child: const Text('Save')),
-
-                  Expanded(child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: ListView.builder(
-                          controller: _transcriptController, // Auto-scroll controller
-                          itemCount: _transcript.length,
-                          itemBuilder: (context, index) {
-                            return Text(
-                              _transcript[index],
-                              style: _textStyle,
-                            );
-                          },
-                        ),
-                      ),
-                      const Divider(),
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: _textStyle.fontSize! * 5
-                        ),
-                        child: Align(alignment: Alignment.centerLeft,
-                          child: SingleChildScrollView(
-                            controller: _partialResultController,
-                            child: Text(_partialResult, style: _textStyle)
-                          )
-                        ),
-                      ),
-                    ],
-                  )),
+                  SettingsPanel(
+                    serviceAccountController: _serviceAccountJsonController,
+                    projectIdController: _projectIdController,
+                    languageController: _languageCodeController,
+                    model: _model,
+                    onModelChanged: _onModelChanged,
+                    onSave: _savePrefs,
+                    errorMsg: _errorMsg,
+                  ),
+                  Expanded(
+                    child: TranscriptView(
+                      transcript: _transcript,
+                      partialResult: _partialResult,
+                      transcriptController: _transcriptController,
+                      partialController: _partialResultController,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -398,7 +414,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                 right: 20,
                 child: FloatingActionButton(
                   onPressed: () {
-                    Share.share(_transcript.join('\n'));
+                    // TODO (parking lot P3): export as JSON or SRT with timestamps and speakers
+                    Share.share(_transcript.map((u) => u.text).join('\n'));
                   },
                   child: const Icon(Icons.share)),
               ),

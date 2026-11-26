@@ -63,8 +63,28 @@ jobs:
 
       - run: flutter pub get
 
+      # Only real errors fail the build; warnings and hints are just printed
+      - name: Analyze
+        shell: bash
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee "$RUNNER_TEMP/analyze.log"
+
       # Build number grows with every run so each APK can update over the previous one
-      - run: flutter build apk --release --build-number=${{ github.run_number }}
+      - name: Build release APK
+        shell: bash
+        run: flutter build apk --release --build-number=${{ github.run_number }} 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      # Copy the tail of a failed step's output into an annotation, so the cause is visible
+      # without downloading logs (no secrets are printed by these commands)
+      - name: Summarize failure
+        if: failure()
+        shell: bash
+        run: |
+          for f in analyze build; do
+            if [ -f "$RUNNER_TEMP/$f.log" ]; then
+              msg=$(tail -c 3000 "$RUNNER_TEMP/$f.log" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+              echo "::error title=$f output::$msg"
+            fi
+          done
 
       - name: Remove signing material
         if: always()
