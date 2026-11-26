@@ -73,6 +73,17 @@ jobs:
         shell: bash
         run: flutter build apk --release --build-number=${{ github.run_number }} 2>&1 | tee "$RUNNER_TEMP/build.log"
 
+      # Publish only the public certificate fingerprint, so consecutive builds can be compared:
+      # the same fingerprint means a new APK installs over the old one with settings kept.
+      - name: Report signing certificate
+        shell: bash
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          CERTS=$("$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk)
+          SHA=$(echo "$CERTS" | grep -m1 'SHA-256 digest' | sed 's/.*: //')
+          if echo "$CERTS" | grep -q 'Android Debug'; then KIND="DEBUG key (no release secrets were available)"; else KIND="release key"; fi
+          echo "::notice title=APK signed with::$KIND, SHA-256 $SHA"
+
       # Copy the tail of a failed step's output into an annotation, so the cause is visible
       # without downloading logs (no secrets are printed by these commands)
       - name: Summarize failure
