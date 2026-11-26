@@ -17,6 +17,8 @@ import 'package:simple_frame_app/text_utils.dart';
 import 'package:simple_frame_app/simple_frame_app.dart';
 import 'foreground_service.dart';
 import 'settings_panel.dart';
+import 'spike_controls.dart';
+import 'spike_recorder.dart';
 import 'stt_models.dart';
 import 'transcript_view.dart';
 import 'tx_styled_text.dart';
@@ -76,6 +78,10 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   final ScrollController _transcriptController = ScrollController();
   final ScrollController _partialResultController = ScrollController();
   String? _errorMsg;
+
+  // SPIKE ONLY: raw audio recording for the colour-pass experiments
+  bool _recordRaw = false;
+  final SpikeRecorder _recorder = SpikeRecorder();
 
   @override
   void initState() {
@@ -258,6 +264,11 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       // the audio stream from Frame, which needs to be closed() to stop the streaming recognition
       _audioSampleStream = rxAudio.attach(frame!.dataResponse);
 
+      // SPIKE ONLY: a second listener on the same broadcast stream, the live path is untouched
+      if (_recordRaw) {
+        _recorder.start(_audioSampleStream!, onSaved: () => setState(() {}));
+      }
+
       String prevText = '';
 
       speechToText.endlessStreamingRecognize(
@@ -413,6 +424,12 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                     onSave: _savePrefs,
                     onTestColours: _testColours,
                     errorMsg: _errorMsg,
+                  ),
+                  SpikeControls(
+                    recordRaw: _recordRaw,
+                    onRecordRawChanged: (on) => setState(() => _recordRaw = on),
+                    hasRecording: _recorder.hasRecording,
+                    onShare: _recorder.shareLast,
                   ),
                   Expanded(
                     child: TranscriptView(

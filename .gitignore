@@ -39,6 +39,13 @@ app.*.map.json
 
 tool/node_modules/
 
+# Spike research kit: environment, recordings and outputs stay local
+spike/.venv/
+spike/__pycache__/
+spike/out/
+spike/*.wav
+spike/script_*.txt
+
 # Signing material must never be committed (this repo is public)
 /android/key.properties
 *.jks
