@@ -50,6 +50,17 @@ jobs:
           } > android/key.properties
           echo "Release signing configured."
 
+      # The app loads assets/frame_app.min.lua, so regenerate it from frame_app.lua and fail
+      # the build if the committed copy was stale (keeps the two files from drifting apart)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Regenerate and check frame_app.min.lua
+        run: |
+          npm ci --prefix tool
+          node tool/minify_lua.js
+          git diff --exit-code -- assets/frame_app.min.lua || { echo "::error::frame_app.min.lua was out of date. Run 'node tool/minify_lua.js' and commit."; exit 1; }
+
       - run: flutter pub get
 
       # Build number grows with every run so each APK can update over the previous one

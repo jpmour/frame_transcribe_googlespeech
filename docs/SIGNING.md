@@ -7,6 +7,9 @@ each time. This repo is public, so the key and passwords go into GitHub secrets 
 1. Install Java (needed only for the `keytool` command). In PowerShell:
    `winget install EclipseAdoptium.Temurin.17.JDK`
    Close and reopen PowerShell, then check with `keytool -help`.
+   If PowerShell still says `keytool` is not recognized, use the full path in step 3 instead, for example:
+   `& "C:\Program Files\Eclipse Adoptium\jdk-17.0.21.10002-hotspot\bin\keytool.exe" -genkeypair ...`
+   (check the exact folder name under `C:\Program Files\Eclipse Adoptium`).
 2. Make a private folder outside any Git repo:
    `mkdir $HOME\frame-keys`
 3. Create the key. Answer the questions with anything. Choose one long password and remember it:

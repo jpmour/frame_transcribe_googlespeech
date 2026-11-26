@@ -37,6 +37,8 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+tool/node_modules/
+
 # Signing material must never be committed (this repo is public)
 /android/key.properties
 *.jks

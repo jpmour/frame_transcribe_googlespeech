@@ -1,0 +1,8 @@
+{
+  "name": "frame-transcribe-tools",
+  "private": true,
+  "description": "Build tools for the Frame Lua app (not part of the Flutter app)",
+  "dependencies": {
+    "luamin": "1.0.4"
+  }
+}
