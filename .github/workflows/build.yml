@@ -12,9 +12,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -52,7 +52,7 @@ jobs:
 
       # The app loads assets/frame_app.min.lua, so regenerate it from frame_app.lua and fail
       # the build if the committed copy was stale (keeps the two files from drifting apart)
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
       - name: Regenerate and check frame_app.min.lua
@@ -101,7 +101,7 @@ jobs:
         if: always()
         run: rm -f android/key.properties "$RUNNER_TEMP/release.jks"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: frame-transcribe-apk
           path: build/app/outputs/flutter-apk/app-release.apk
